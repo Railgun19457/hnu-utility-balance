@@ -1,0 +1,39 @@
+# Python bytecode
+__pycache__/
+*.py[cod]
+*.pyo
+
+# Personal config (contains openId)
+hnu_config.json
+
+# Runtime generated
+_capture_addon.py
+
+# WeChat app packages (reverse-engineered)
+__APP__.wxapkg
+__APP___dec.wxapkg
+
+# MMKV cache backup
+mmkv_backup/
+
+# Unpacked source
+unpacked/
+
+# SSL debug keys
+sslkeys.log
+
+# IDE
+.vscode/
+.idea/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Virtual environment
+venv/
+.venv/
+env/
+
+AGENTS.md
+query_elec.py
