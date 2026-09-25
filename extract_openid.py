@@ -11,15 +11,14 @@ r"""
     python extract_openid.py --proxy    # 直接走 mitmproxy 抓包
 """
 
+import json
 import os
 import re
-import sys
-import time
-import json
-import threading
 import subprocess
-import ctypes
+import sys
 import tempfile
+import threading
+import time
 
 CONFIG_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "hnu_config.json")
 ADDON_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "_capture_addon.py")
@@ -29,7 +28,7 @@ PROXY_TIMEOUT_SECONDS = 120
 WATCH_SECONDS = 180
 POLL_INTERVAL = 2
 
-ADDON_CODE_TEMPLATE = r'''
+ADDON_CODE_TEMPLATE = r"""
 import json
 from mitmproxy import http
 
@@ -49,7 +48,7 @@ def response(flow: http.HTTPFlow):
                     f.write(openid.strip())
             except OSError:
                 pass
-'''
+"""
 
 
 def mask(open_id):
@@ -66,8 +65,18 @@ def parse_capture_line(line):
 
 
 def save_config(open_id):
+    """写入 openId，保留配置文件中已有的其他键。"""
+    config = {}
+    try:
+        with open(CONFIG_FILE, encoding="utf-8") as f:
+            existing = json.load(f)
+        if isinstance(existing, dict):
+            config = existing
+    except (OSError, ValueError):
+        pass
+    config["openId"] = open_id
     with open(CONFIG_FILE, "w", encoding="utf-8") as f:
-        json.dump({"openId": open_id}, f, ensure_ascii=False)
+        json.dump(config, f, ensure_ascii=False)
 
 
 def verify_open_id(open_id):
@@ -122,10 +131,10 @@ def confirm_and_save(valid):
         print(f"\n  匹配到：{name}")
 
     save_config(open_id)
-    print(f"\n  {'='*40}")
+    print(f"\n  {'=' * 40}")
     print(f"  V 配置成功！openId: {mask(open_id)}")
     print(f"  V 已保存到 {CONFIG_FILE}")
-    print(f"  {'='*40}\n")
+    print(f"  {'=' * 40}\n")
     return True
 
 
@@ -161,16 +170,10 @@ def scan_flow(watch):
 _INTERNET_SETTINGS = r"SOFTWARE\Microsoft\Windows\CurrentVersion\Internet Settings"
 
 
-def is_admin():
-    try:
-        return ctypes.windll.shell32.IsUserAnAdmin()
-    except (AttributeError, OSError):
-        return False
-
-
 def get_proxy_settings():
     """读取当前系统代理设置，供流程结束后恢复。"""
     import winreg
+
     values = {}
     key = winreg.OpenKey(winreg.HKEY_CURRENT_USER, _INTERNET_SETTINGS, 0, winreg.KEY_QUERY_VALUE)
     try:
@@ -186,6 +189,7 @@ def get_proxy_settings():
 
 def set_proxy(enable, port=PROXY_PORT):
     import winreg
+
     key = winreg.OpenKey(winreg.HKEY_CURRENT_USER, _INTERNET_SETTINGS, 0, winreg.KEY_SET_VALUE)
     if enable:
         winreg.SetValueEx(key, "ProxyEnable", 0, winreg.REG_DWORD, 1)
@@ -202,6 +206,7 @@ def set_proxy(enable, port=PROXY_PORT):
 def restore_proxy(previous):
     """把系统代理恢复为进入抓包流程前的状态。"""
     import winreg
+
     key = winreg.OpenKey(winreg.HKEY_CURRENT_USER, _INTERNET_SETTINGS, 0, winreg.KEY_SET_VALUE)
     try:
         winreg.SetValueEx(key, "ProxyEnable", 0, winreg.REG_DWORD, int(previous.get("ProxyEnable", 0)))
@@ -229,8 +234,7 @@ def install_ca_cert():
 
     try:
         store = subprocess.run(
-            ["certutil", "-addstore", "-user", "Root", cert_path],
-            capture_output=True, text=True, timeout=10
+            ["certutil", "-addstore", "-user", "Root", cert_path], capture_output=True, text=True, timeout=10
         )
     except (OSError, subprocess.SubprocessError):
         return False
@@ -238,15 +242,27 @@ def install_ca_cert():
 
 
 def kill_mitmproxy():
-    subprocess.run(["taskkill", "/f", "/im", "mitmdump.exe"],
-                   capture_output=True)
+    subprocess.run(["taskkill", "/f", "/im", "mitmdump.exe"], capture_output=True)
+
+
+def remove_file(path):
+    try:
+        os.remove(path)
+    except OSError:
+        pass
 
 
 def proxy_flow():
-    print("\n"
-          "  +--------------------------------+\n"
-          "  |  海南大学水电费 - 抓包模式     |\n"
-          "  +--------------------------------+\n")
+    if not sys.platform.startswith("win"):
+        print("\n  [错误] 抓包模式依赖 Windows 系统代理与 PC 微信，当前平台不支持")
+        return
+
+    print(
+        "\n"
+        "  +--------------------------------+\n"
+        "  |  海南大学水电费 - 抓包模式     |\n"
+        "  +--------------------------------+\n"
+    )
 
     try:
         check = subprocess.run(["mitmdump", "--version"], capture_output=True, text=True, timeout=10)
@@ -280,35 +296,27 @@ def proxy_flow():
 
     print(f"  [2/4] 启动代理 (端口 {PROXY_PORT})...")
     mitm = subprocess.Popen(
-        ["mitmdump", "-s", ADDON_FILE, "-p", str(PROXY_PORT),
-         "--set", "block_global=false"],
-        stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
-        text=True, creationflags=subprocess.CREATE_NO_WINDOW
+        ["mitmdump", "-s", ADDON_FILE, "-p", str(PROXY_PORT), "--set", "block_global=false"],
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        text=True,
+        creationflags=subprocess.CREATE_NO_WINDOW,
     )
     time.sleep(3)
 
     if mitm.poll() is not None:
         out = mitm.stdout.read() if mitm.stdout else ""
         print(f"  [错误] mitmdump 启动失败: {out[:200]}")
+        kill_mitmproxy()
+        remove_file(ADDON_FILE)
         return
     print("  [✓] 代理已启动")
 
-    print(f"  [3/4] 设置系统代理...")
-    try:
-        previous_proxy = get_proxy_settings()
-    except (ImportError, OSError):
-        previous_proxy = {}
-    set_proxy(True, PROXY_PORT)
-    print("  [✓] 系统代理已设置")
-
-    print(f"\n  +-------------------------------------+")
-    print(f"  |  请打开微信，进入「海大售电」    |")
-    print(f"  |  小程序，等待自动检测...            |")
-    print(f"  |  超时时间: {PROXY_TIMEOUT_SECONDS} 秒     |")
-    print(f"  +-------------------------------------+\n")
-
+    print("  [3/4] 设置系统代理...")
     captured_oid = None
     stop_event = threading.Event()
+    previous_proxy = {}
+    proxy_set = False
 
     def reader_thread():
         nonlocal captured_oid
@@ -325,6 +333,39 @@ def proxy_flow():
                     stop_event.set()
                     break
 
+    def cleanup():
+        stop_event.set()
+        if proxy_set:
+            try:
+                restore_proxy(previous_proxy)
+            except (ImportError, OSError):
+                try:
+                    set_proxy(False)
+                except (ImportError, OSError):
+                    print("  [警告] 系统代理恢复失败，请手动检查代理设置")
+        kill_mitmproxy()
+        remove_file(ADDON_FILE)
+        remove_file(OUTPUT_FILE)
+
+    try:
+        try:
+            previous_proxy = get_proxy_settings()
+        except (ImportError, OSError):
+            previous_proxy = {}
+        proxy_set = True
+        set_proxy(True, PROXY_PORT)
+    except (ImportError, OSError):
+        print("  [错误] 设置系统代理失败，请检查权限后重试")
+        cleanup()
+        return
+    print("  [✓] 系统代理已设置")
+
+    print("\n  +-------------------------------------+")
+    print("  |  请打开微信，进入「海大售电」    |")
+    print("  |  小程序，等待自动检测...            |")
+    print(f"  |  超时时间: {PROXY_TIMEOUT_SECONDS} 秒     |")
+    print("  +-------------------------------------+\n")
+
     reader = threading.Thread(target=reader_thread, daemon=True)
     reader.start()
 
@@ -337,7 +378,7 @@ def proxy_flow():
 
             if os.path.exists(OUTPUT_FILE):
                 try:
-                    with open(OUTPUT_FILE, "r") as f:
+                    with open(OUTPUT_FILE) as f:
                         content = f.read().strip()
                         if content and len(content) >= 20:
                             captured_oid = content
@@ -351,52 +392,41 @@ def proxy_flow():
             time.sleep(1)
     except KeyboardInterrupt:
         pass
-
-    print()
-    print("  [4/4] 清理...")
-    stop_event.set()
-    try:
-        restore_proxy(previous_proxy)
-    except (ImportError, OSError):
-        set_proxy(False)
-    kill_mitmproxy()
-    try:
-        os.remove(ADDON_FILE)
-    except OSError:
-        pass
-    try:
-        os.remove(OUTPUT_FILE)
-    except OSError:
-        pass
+    finally:
+        print()
+        print("  [4/4] 清理...")
+        cleanup()
 
     if captured_oid:
         name, error = verify_open_id(captured_oid)
         if name:
             save_config(captured_oid)
-            print(f"\n  {'='*40}")
+            print(f"\n  {'=' * 40}")
             print(f"  V 配置成功！openId: {mask(captured_oid)}（{name}）")
             print(f"  V 已保存到 {CONFIG_FILE}")
-            print(f"  {'='*40}\n")
+            print(f"  {'=' * 40}\n")
         else:
             print(f"\n  [警告] 捕获到 openId 但验证失败：{error}")
             print("  未写入配置；请确认小程序能正常打开、网络可用后重试\n")
     else:
-        print(f"\n  [失败] 未检测到 openId")
-        print(f"  可能的原因:")
-        print(f"    - 微信未完全关闭后重新打开")
-        print(f"    - 小程序未打开或网络异常")
-        print(f"    - 代理端口被占用")
-        print(f"  请关闭微信后重试\n")
+        print("\n  [失败] 未检测到 openId")
+        print("  可能的原因:")
+        print("    - 微信未完全关闭后重新打开")
+        print("    - 小程序未打开或网络异常")
+        print("    - 代理端口被占用")
+        print("  请关闭微信后重试\n")
 
 
 # ─────────────────────────── 入口 ───────────────────────────
 
 
 def main():
-    print("\n"
-          "  +--------------------------------+\n"
-          "  |  海南大学水电费 - 提取 openId  |\n"
-          "  +--------------------------------+\n")
+    print(
+        "\n"
+        "  +--------------------------------+\n"
+        "  |  海南大学水电费 - 提取 openId  |\n"
+        "  +--------------------------------+\n"
+    )
 
     if "--proxy" in sys.argv[1:]:
         proxy_flow()
@@ -412,12 +442,15 @@ def main():
     if scan_flow(watch=False):
         return
 
-    print("\n  本地缓存中没有找到。请在 PC 微信中打开一次「海大售电」小程序\n")
-    if scan_flow(watch=True):
-        return
+    if hnu_utility.default_search_paths():
+        print("\n  本地缓存中没有找到。请在 PC 微信中打开一次「海大售电」小程序\n")
+        if scan_flow(watch=True):
+            return
+    else:
+        print("\n  本机没有微信数据目录（可能未运行过 PC 微信），跳过监听模式\n")
 
     try:
-        answer = input("\n  仍未找到。是否回退到 mitmproxy 抓包流程？[y/N]: ").strip().lower()
+        answer = input("\n  是否回退到 mitmproxy 抓包流程？[y/N]: ").strip().lower()
     except (EOFError, KeyboardInterrupt):
         answer = ""
     if answer == "y":

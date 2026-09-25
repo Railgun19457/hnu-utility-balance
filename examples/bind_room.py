@@ -20,6 +20,8 @@
 
 from __future__ import annotations
 
+import sys
+
 from _config import build_parser, resolve_open_id
 
 from hnu_utility import HnuError, HnuUtilityClient
@@ -35,7 +37,7 @@ def main() -> int:
         try:
             user = client.get_wx_user().user
         except HnuError as exc:
-            print(f"查询失败：{exc}")
+            print(f"查询失败：{exc}", file=sys.stderr)
             return 1
 
         print("当前绑定：")
@@ -52,16 +54,20 @@ def main() -> int:
             print("\n绑定信息不完整，无法演示保存")
             return 1
 
-        message = client.save_room_info(
-            xiao_qu_id=user.xiao_qu_id,
-            xiao_qu_name=user.xiao_qu_name,
-            lou_dong_id=user.lou_dong_id,
-            lou_dong_name=user.lou_dong_name,
-            room_id=user.room_id,
-            kt_lou_dong_id=user.kt_lou_dong_id,
-            kt_lou_dong_name=user.kt_lou_dong_name,
-            kt_room_id=user.kt_room_id,
-        )
+        try:
+            message = client.save_room_info(
+                xiao_qu_id=user.xiao_qu_id,
+                xiao_qu_name=user.xiao_qu_name,
+                lou_dong_id=user.lou_dong_id,
+                lou_dong_name=user.lou_dong_name,
+                room_id=user.room_id,
+                kt_lou_dong_id=user.kt_lou_dong_id,
+                kt_lou_dong_name=user.kt_lou_dong_name,
+                kt_room_id=user.kt_room_id,
+            )
+        except HnuError as exc:
+            print(f"\n保存失败：{exc}", file=sys.stderr)
+            return 1
         print(f"\nsave_room_info -> {message}")
     return 0
 

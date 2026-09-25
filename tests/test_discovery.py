@@ -13,7 +13,7 @@ def test_scan_finds_open_id_in_getopenid_response(tmp_path):
     cache = tmp_path / "Cache_Data" / "data_1"
     cache.parent.mkdir()
     body = (
-        b'a10bv0w3IFj373MK61w34Uqg100bv06\x00'
+        b"a10bv0w3IFj373MK61w34Uqg100bv06\x00"
         b'{"statusCode":"200","message":null,"resultObject":"' + OID_A.encode() + b'"}\x00'
     )
     cache.write_bytes(body)
@@ -34,9 +34,7 @@ def test_scan_finds_open_id_in_query_string(tmp_path):
 
 def test_scan_dedupes_and_orders(tmp_path):
     f = tmp_path / "mix.bin"
-    f.write_bytes(
-        b'"openId":"' + OID_B.encode() + b'" "resultObject":"' + OID_A.encode() + b'"'
-    )
+    f.write_bytes(b'"openId":"' + OID_B.encode() + b'" "resultObject":"' + OID_A.encode() + b'"')
     ids = scan_open_ids([tmp_path])
     assert ids == [OID_A, OID_B]  # resultObject 模式优先
 
@@ -56,13 +54,21 @@ def test_scan_matches_across_chunk_boundaries(tmp_path, monkeypatch):
     assert scan_open_ids([tmp_path]) == [OID_B]
 
 
+def test_scan_orders_by_specificity_across_files(tmp_path):
+    weak = tmp_path / "a_weak.bin"
+    weak.write_bytes(b"GET /service/applet/getWxUser?openId=" + OID_B.encode() + b"&appid=x HTTP/1.1")
+    strong = tmp_path / "b_strong.bin"
+    strong.write_bytes(b'{"statusCode":"200","resultObject":"' + OID_A.encode() + b'"}')
+    assert scan_open_ids([tmp_path]) == [OID_A, OID_B]
+
+
 def test_scan_missing_path(tmp_path):
     assert scan_open_ids([tmp_path / "nope"]) == []
 
 
 def test_scan_ignores_invalid_candidates(tmp_path):
     f = tmp_path / "short.bin"
-    f.write_bytes(b'"openId":"oSHORT123"' )  # 长度不足 28
+    f.write_bytes(b'"openId":"oSHORT123"')  # 长度不足 28
     f2 = tmp_path / "bad.bin"
     f2.write_bytes(b'"openId":"X' + b"A" * 27 + b'"')  # 非 o 开头
     assert scan_open_ids([tmp_path]) == []

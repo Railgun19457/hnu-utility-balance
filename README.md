@@ -12,7 +12,7 @@
 - 覆盖全部只读查询接口与房间绑定 / 解绑
 - 本地扫描自动提取 openId，无需抓包（仅限运行过 PC 微信的机器）
 - 强类型数据模型（`User`、`EleInfo`、`BuyRecord`……），保留原始字典
-- 自动签名（`MD5(appid + timestamp + appSecret)`）、超时 / 重试 / TLS 配置
+- 自动签名（`MD5(appid + timestamp + appSecret)`）、超时 / 连接重试 / TLS 配置
 - `raw_request()` 逃生通道，可调用未封装的接口
 - 其余程序可直接以本库为依赖调用
 
@@ -26,11 +26,14 @@ pip install -e .
 
 也可以只装依赖 `httpx` 后，把 `hnu_utility/` 目录直接放进你的项目。
 
-运行测试：
+运行测试与代码检查：
 
 ```bash
 pip install -e ".[dev]"
 pytest
+ruff check .
+ruff format --check .
+mypy
 ```
 
 ## 快速开始
@@ -277,8 +280,11 @@ python examples/bind_room.py --confirm
 ## 注意事项
 
 - 本地扫描依赖微信缓存未被清理；若扫描和监听都失败，再使用 `--proxy` 抓包流程（需要 mitmproxy）。
+- 抓包模式仅支持 Windows（依赖系统代理与 PC 微信），其他平台请手动填写 openId。
 - `hnu_config.json` 含个人 `openId`，请勿提交到公开仓库（已在 `.gitignore` 中）。
 - 绑定 / 解绑属于写操作，会影响账号当前绑定的房间，调用前请确认参数无误。
+- `const.APP_ID` / `const.APP_SECRET` 是小程序客户端内置常量（非个人密钥），如学校更换部署可经构造参数覆盖。
+- `retries` 仅重试连接类失败（httpx 传输层），请求超时 / 服务端 5xx 不会自动重试。
 
 ## 相关项目
 

@@ -17,8 +17,9 @@ from __future__ import annotations
 
 import os
 import re
+from collections.abc import Sequence
 from pathlib import Path
-from typing import List, Optional, Sequence, Tuple, Union
+from typing import Optional, Union
 
 PathLike = Union[str, "os.PathLike[str]"]
 
@@ -37,14 +38,14 @@ _CHUNK_SIZE = 1024 * 1024
 _OVERLAP = 64  # 保证跨块边界的匹配也能被找到
 
 
-def default_search_paths() -> List[Path]:
+def default_search_paths() -> list[Path]:
     """返回常见的微信数据目录（存在才返回）。
 
     - 微信 4.x：``%APPDATA%\\Tencent\\xwechat\\radium\\web\\profiles\\*``
       与 ``%APPDATA%\\Tencent\\xwechat\\radium\\users\\*``
     - 微信 3.x：``~/Documents/WeChat Files/Applet``
     """
-    paths: List[Path] = []
+    paths: list[Path] = []
 
     appdata = os.getenv("APPDATA")
     if appdata:
@@ -63,9 +64,9 @@ def default_search_paths() -> List[Path]:
     return paths
 
 
-def _scan_file(path: Path) -> List[str]:
-    """流式扫描单个文件，结果按模式特异性排序。"""
-    hits: List[Tuple[int, str]] = []
+def _scan_file(path: Path) -> list[tuple[int, str]]:
+    """流式扫描单个文件，返回 ``(优先级, openId)`` 列表，优先级越小越可信。"""
+    hits: list[tuple[int, str]] = []
     tail = b""
     with path.open("rb") as fp:
         while True:
@@ -77,25 +78,25 @@ def _scan_file(path: Path) -> List[str]:
                 for match in pattern.finditer(data):
                     hits.append((priority, match.group(1).decode("ascii")))
             tail = data[-_OVERLAP:]
-    hits.sort(key=lambda item: item[0])
-    return [value for _, value in hits]
+    return hits
 
 
 def scan_open_ids(
     paths: Optional[Sequence[PathLike]] = None,
     *,
     max_file_size: int = MAX_SCAN_FILE_SIZE,
-) -> List[str]:
+) -> list[str]:
     """扫描目录下的文件，返回去重后的候选 openId 列表。
 
-    按目录遍历顺序扫描；同一文件内按模式特异性排序（getOpenId 响应最优）。
-    文件分块读取，内存占用与文件大小无关；不可读的文件 / 目录会被跳过。
+    候选按模式特异性全局排序（getOpenId 响应 > 用户信息 JSON > URL 查询串），
+    同一优先级保持文件遍历顺序。文件分块读取，内存占用与文件大小无关；
+    不可读的文件 / 目录会被跳过。
     """
     if paths is None:
         paths = default_search_paths()
 
-    found: List[str] = []
-    seen = set()
+    found: list[str] = []
+    best_priority: dict[str, int] = {}
 
     for root in paths:
         root_path = Path(root)
@@ -107,12 +108,16 @@ def scan_open_ids(
                 try:
                     if file.stat().st_size > max_file_size:
                         continue
-                    values = _scan_file(file)
+                    hits = _scan_file(file)
                 except OSError:
                     continue
-                for value in values:
-                    if value not in seen:
-                        seen.add(value)
+                for priority, value in hits:
+                    current = best_priority.get(value)
+                    if current is None:
+                        best_priority[value] = priority
                         found.append(value)
+                    elif priority < current:
+                        best_priority[value] = priority
 
+    found.sort(key=lambda value: best_priority[value])
     return found

@@ -12,7 +12,7 @@ import sys
 
 from _config import parse_open_id
 
-from hnu_utility import EleType, HnuApiError, HnuError, HnuUtilityClient
+from hnu_utility import EleType, HnuError, HnuUtilityClient
 
 
 def fmt(value) -> str:
@@ -44,15 +44,16 @@ def main() -> int:
         ):
             try:
                 info = fetch()
-            except HnuApiError:
+            except HnuError as exc:
+                print(f"{label:>8}：查询失败（{exc}）", file=sys.stderr)
                 continue
             total += info.left_money or 0.0
             print(f"{label:>8}：{fmt(info.left_ele):>7} 度 / {fmt(info.left_money):>7} 元  [{info.mon_time}]")
 
         try:
             water = client.get_water_info()
-        except HnuApiError:
-            pass
+        except HnuError as exc:
+            print(f"{'水表':>8}：查询失败（{exc}）", file=sys.stderr)
         else:
             total += water.left_money or 0.0
             print(f"{'水表':>8}：{fmt(water.left_water):>7} 吨 / {fmt(water.left_money):>7} 元  [{water.mon_time}]")

@@ -30,7 +30,8 @@ from __future__ import annotations
 
 import hashlib
 import time
-from typing import Any, Dict, List, Mapping, Optional, Union
+from collections.abc import Mapping
+from typing import TYPE_CHECKING, Any, Optional, Union
 
 import httpx
 
@@ -88,7 +89,7 @@ class BaseClient:
         self.timeout = timeout
         self.retries = retries
         self.verify = verify
-        self._headers: Dict[str, str] = {
+        self._headers: dict[str, str] = {
             "User-Agent": user_agent,
             "Accept": "application/json",
         }
@@ -124,17 +125,17 @@ class BaseClient:
     def sign(self, timestamp: int) -> str:
         """计算 ``MD5(appid + timestamp + appSecret)``。"""
         raw = f"{self._app_id}{timestamp}{self._app_secret}"
-        return hashlib.md5(raw.encode("utf-8")).hexdigest()
+        return hashlib.md5(raw.encode("utf-8"), usedforsecurity=False).hexdigest()
 
     def _require_open_id(self) -> str:
         if not self._open_id:
             raise ValueError("此接口需要 openId，请先提供（hnu_config.json 或构造参数）")
         return self._open_id
 
-    def _open_id_params(self) -> Dict[str, Any]:
+    def _open_id_params(self) -> dict[str, Any]:
         return {"openId": self._require_open_id()}
 
-    def _signed_params(self) -> Dict[str, Any]:
+    def _signed_params(self) -> dict[str, Any]:
         timestamp = int(time.time() * 1000)
         return {
             "openId": self._require_open_id(),
@@ -191,34 +192,40 @@ class BaseClient:
         return payload.get("resultObject")
 
     @classmethod
-    def _list(cls, model: Any, payload: Mapping[str, Any]) -> List[Any]:
+    def _list(cls, model: Any, payload: Mapping[str, Any]) -> list[Any]:
         return parse_list(model, cls._unwrap(payload))
 
 
 class _EndpointMixin:
     """全部接口方法的参数构造逻辑（同步 / 异步共用）。"""
 
+    if TYPE_CHECKING:
+
+        def _signed_params(self) -> dict[str, Any]: ...
+
+        def _open_id_params(self) -> dict[str, Any]: ...
+
     # ── 用户与余额 ──────────────────────────────────────────────
 
     def _p_get_wx_user(self) -> Mapping[str, Any]:
-        return self._signed_params()  # type: ignore[attr-defined]
+        return self._signed_params()
 
     def _p_get_user(self) -> Mapping[str, Any]:
-        return self._open_id_params()  # type: ignore[attr-defined]
+        return self._open_id_params()
 
     def _p_get_left_money(self) -> Mapping[str, Any]:
-        return self._signed_params()  # type: ignore[attr-defined]
+        return self._signed_params()
 
     def _p_get_ele_info(self, ele_type: Union[EleType, int, str]) -> Mapping[str, Any]:
-        return {**self._open_id_params(), "type": int(ele_type)}  # type: ignore[attr-defined]
+        return {**self._open_id_params(), "type": int(ele_type)}
 
     def _p_get_water_info(self) -> Mapping[str, Any]:
-        return self._open_id_params()  # type: ignore[attr-defined]
+        return self._open_id_params()
 
     # ── 充值 / 消费记录 ─────────────────────────────────────────
 
     def _p_get_personal_buy_info(self, consume_type: Union[ConsumeType, int]) -> Mapping[str, Any]:
-        return {**self._open_id_params(), "consumeType": int(consume_type)}  # type: ignore[attr-defined]
+        return {**self._open_id_params(), "consumeType": int(consume_type)}
 
     def _p_get_room_buy_info(
         self,
@@ -226,22 +233,22 @@ class _EndpointMixin:
         room_type: Union[RoomType, int],
     ) -> Mapping[str, Any]:
         return {
-            **self._open_id_params(),  # type: ignore[attr-defined]
+            **self._open_id_params(),
             "consumeType": int(consume_type),
             "roomType": int(room_type),
         }
 
     def _p_get_buy_orders(self, school_name: str) -> Mapping[str, Any]:
-        return {**self._open_id_params(), "schoolName": school_name}  # type: ignore[attr-defined]
+        return {**self._open_id_params(), "schoolName": school_name}
 
     def _p_get_consume_records(self, school_name: str) -> Mapping[str, Any]:
-        return {**self._open_id_params(), "schoolName": school_name}  # type: ignore[attr-defined]
+        return {**self._open_id_params(), "schoolName": school_name}
 
     def _p_get_last_consume(self) -> Mapping[str, Any]:
-        return self._open_id_params()  # type: ignore[attr-defined]
+        return self._open_id_params()
 
     def _p_get_ele_used_info(self) -> Mapping[str, Any]:
-        return self._open_id_params()  # type: ignore[attr-defined]
+        return self._open_id_params()
 
     # ── 校区 / 楼栋 / 房间 ──────────────────────────────────────
 
@@ -289,7 +296,7 @@ class _EndpointMixin:
         kt_room_id: Union[str, int],
     ) -> Mapping[str, Any]:
         return {
-            **self._open_id_params(),  # type: ignore[attr-defined]
+            **self._open_id_params(),
             "xiaoquId": xiao_qu_id,
             "xiaoQuName": xiao_qu_name,
             "loudongName": lou_dong_name,
@@ -310,7 +317,7 @@ class _EndpointMixin:
         room_name: str,
     ) -> Mapping[str, Any]:
         return {
-            **self._open_id_params(),  # type: ignore[attr-defined]
+            **self._open_id_params(),
             "xiaoquId": xiao_qu_id,
             "xiaoQuName": xiao_qu_name,
             "loudongName": lou_dong_name,
@@ -320,7 +327,7 @@ class _EndpointMixin:
         }
 
     def _p_clear_room(self) -> Mapping[str, Any]:
-        return self._open_id_params()  # type: ignore[attr-defined]
+        return self._open_id_params()
 
     # ── 其他 ────────────────────────────────────────────────────
 
@@ -378,7 +385,7 @@ class HnuUtilityClient(_EndpointMixin, BaseClient):
         if self._owns_client:
             self._client.close()
 
-    def __enter__(self) -> "HnuUtilityClient":
+    def __enter__(self) -> HnuUtilityClient:
         return self
 
     def __exit__(self, *exc_info: Any) -> None:
@@ -416,7 +423,7 @@ class HnuUtilityClient(_EndpointMixin, BaseClient):
         - 否则 ``with_open_id=True`` 时附带 ``openId``；
         - ``params`` 中的键会覆盖自动生成的参数。
         """
-        merged: Dict[str, Any] = {}
+        merged: dict[str, Any] = {}
         if signed:
             merged.update(self._signed_params())
         elif with_open_id:
@@ -454,11 +461,12 @@ class HnuUtilityClient(_EndpointMixin, BaseClient):
         consume_type: Union[ConsumeType, int] = ConsumeType.ELECTRICITY,
     ) -> PersonalBuyInfo:
         """个人充值记录（电 / 水，``ConsumeType`` 区分）。"""
-        result = self._get(
-            "/weixinEle/getPersonalBuyInfo",
-            self._p_get_personal_buy_info(consume_type),
+        return PersonalBuyInfo.from_dict(
+            self._get(
+                "/weixinEle/getPersonalBuyInfo",
+                self._p_get_personal_buy_info(consume_type),
+            )
         )
-        return PersonalBuyInfo.from_dict(result if isinstance(result, Mapping) else {})
 
     def get_room_buy_info(
         self,
@@ -466,22 +474,26 @@ class HnuUtilityClient(_EndpointMixin, BaseClient):
         room_type: Union[RoomType, int] = RoomType.LIGHT,
     ) -> RoomBuyInfo:
         """房间充值记录（照明 / 空调 / 水表，``room_type`` 区分）。"""
-        result = self._get(
-            "/weixinEle/getRoomBuyInfo",
-            self._p_get_room_buy_info(consume_type, room_type),
+        return RoomBuyInfo.from_dict(
+            self._get(
+                "/weixinEle/getRoomBuyInfo",
+                self._p_get_room_buy_info(consume_type, room_type),
+            )
         )
-        return RoomBuyInfo.from_dict(result if isinstance(result, Mapping) else {})
 
-    def get_buy_orders(self, school_name: str) -> List[BuyOrder]:
+    def get_buy_orders(self, school_name: str) -> list[BuyOrder]:
         """水控充值订单列表（``/applet/getBuyInfo``）。
 
         ``school_name`` 可从 ``get_wx_user().user.school_name`` 获取。
         """
         return self._list(BuyOrder, self._get_payload("/applet/getBuyInfo", self._p_get_buy_orders(school_name)))
 
-    def get_consume_records(self, school_name: str) -> List[ConsumeRecord]:
+    def get_consume_records(self, school_name: str) -> list[ConsumeRecord]:
         """水控消费记录列表（``/applet/getConsumeInfo``）。"""
-        return self._list(ConsumeRecord, self._get_payload("/applet/getConsumeInfo", self._p_get_consume_records(school_name)))
+        return self._list(
+            ConsumeRecord,
+            self._get_payload("/applet/getConsumeInfo", self._p_get_consume_records(school_name)),
+        )
 
     def get_last_consume(self) -> Optional[ConsumeRecord]:
         """最近一次扫码 / 蓝牙用水记录（``/applet/getLastConsume``）。"""
@@ -499,11 +511,11 @@ class HnuUtilityClient(_EndpointMixin, BaseClient):
 
     # ── 校区 / 楼栋 / 房间 ──────────────────────────────────────
 
-    def get_schools(self) -> List[NamedItem]:
+    def get_schools(self) -> list[NamedItem]:
         """电类校区列表（``/weixinEle/schoolList``）。"""
         return self._list(NamedItem, self._get_payload("/weixinEle/schoolList", {}))
 
-    def get_water_schools(self) -> List[NamedItem]:
+    def get_water_schools(self) -> list[NamedItem]:
         """水类校区列表（``/weixinEle/waterSchoolList``）。"""
         return self._list(NamedItem, self._get_payload("/weixinEle/waterSchoolList", {}))
 
@@ -513,7 +525,7 @@ class HnuUtilityClient(_EndpointMixin, BaseClient):
         school_name: str,
         ele_type: Union[EleType, int] = EleType.LIGHT,
         keyword: str = "",
-    ) -> List[NamedItem]:
+    ) -> list[NamedItem]:
         """校区下电类楼栋列表（``school_louDongList``，``ele_type`` 区分照明 / 空调）。"""
         return self._list(
             NamedItem,
@@ -528,7 +540,7 @@ class HnuUtilityClient(_EndpointMixin, BaseClient):
         school_id: Union[str, int],
         school_name: str,
         keyword: str = "",
-    ) -> List[NamedItem]:
+    ) -> list[NamedItem]:
         """校区下水类楼栋列表（``waterSchool_louDongList``）。"""
         return self._list(
             NamedItem,
@@ -538,14 +550,14 @@ class HnuUtilityClient(_EndpointMixin, BaseClient):
             ),
         )
 
-    def get_rooms(self, lou_dong_id: Union[str, int], keyword: str = "") -> List[NamedItem]:
+    def get_rooms(self, lou_dong_id: Union[str, int], keyword: str = "") -> list[NamedItem]:
         """楼栋下电类房间列表（``louDong_roomList``）。"""
         return self._list(
             NamedItem,
             self._get_payload("/weixinEle/louDong_roomList", self._p_get_rooms(lou_dong_id, keyword)),
         )
 
-    def get_water_rooms(self, lou_dong_id: Union[str, int], keyword: str = "") -> List[NamedItem]:
+    def get_water_rooms(self, lou_dong_id: Union[str, int], keyword: str = "") -> list[NamedItem]:
         """楼栋下水表房间列表（``waterLouDong_roomList``）。"""
         return self._list(
             NamedItem,
@@ -664,7 +676,7 @@ class AsyncHnuUtilityClient(_EndpointMixin, BaseClient):
         if self._owns_client:
             await self._client.aclose()
 
-    async def __aenter__(self) -> "AsyncHnuUtilityClient":
+    async def __aenter__(self) -> AsyncHnuUtilityClient:
         return self
 
     async def __aexit__(self, *exc_info: Any) -> None:
@@ -697,7 +709,7 @@ class AsyncHnuUtilityClient(_EndpointMixin, BaseClient):
         with_open_id: bool = True,
     ) -> Any:
         """直接调用任意接口（未封装接口的逃生通道），用法同同步版。"""
-        merged: Dict[str, Any] = {}
+        merged: dict[str, Any] = {}
         if signed:
             merged.update(self._signed_params())
         elif with_open_id:
@@ -729,28 +741,30 @@ class AsyncHnuUtilityClient(_EndpointMixin, BaseClient):
         self,
         consume_type: Union[ConsumeType, int] = ConsumeType.ELECTRICITY,
     ) -> PersonalBuyInfo:
-        result = await self._get(
-            "/weixinEle/getPersonalBuyInfo",
-            self._p_get_personal_buy_info(consume_type),
+        return PersonalBuyInfo.from_dict(
+            await self._get(
+                "/weixinEle/getPersonalBuyInfo",
+                self._p_get_personal_buy_info(consume_type),
+            )
         )
-        return PersonalBuyInfo.from_dict(result if isinstance(result, Mapping) else {})
 
     async def get_room_buy_info(
         self,
         consume_type: Union[ConsumeType, int] = ConsumeType.ELECTRICITY,
         room_type: Union[RoomType, int] = RoomType.LIGHT,
     ) -> RoomBuyInfo:
-        result = await self._get(
-            "/weixinEle/getRoomBuyInfo",
-            self._p_get_room_buy_info(consume_type, room_type),
+        return RoomBuyInfo.from_dict(
+            await self._get(
+                "/weixinEle/getRoomBuyInfo",
+                self._p_get_room_buy_info(consume_type, room_type),
+            )
         )
-        return RoomBuyInfo.from_dict(result if isinstance(result, Mapping) else {})
 
-    async def get_buy_orders(self, school_name: str) -> List[BuyOrder]:
+    async def get_buy_orders(self, school_name: str) -> list[BuyOrder]:
         payload = await self._get_payload("/applet/getBuyInfo", self._p_get_buy_orders(school_name))
         return self._list(BuyOrder, payload)
 
-    async def get_consume_records(self, school_name: str) -> List[ConsumeRecord]:
+    async def get_consume_records(self, school_name: str) -> list[ConsumeRecord]:
         payload = await self._get_payload("/applet/getConsumeInfo", self._p_get_consume_records(school_name))
         return self._list(ConsumeRecord, payload)
 
@@ -765,10 +779,10 @@ class AsyncHnuUtilityClient(_EndpointMixin, BaseClient):
 
     # ── 校区 / 楼栋 / 房间 ──────────────────────────────────────
 
-    async def get_schools(self) -> List[NamedItem]:
+    async def get_schools(self) -> list[NamedItem]:
         return self._list(NamedItem, await self._get_payload("/weixinEle/schoolList", {}))
 
-    async def get_water_schools(self) -> List[NamedItem]:
+    async def get_water_schools(self) -> list[NamedItem]:
         return self._list(NamedItem, await self._get_payload("/weixinEle/waterSchoolList", {}))
 
     async def get_buildings(
@@ -777,7 +791,7 @@ class AsyncHnuUtilityClient(_EndpointMixin, BaseClient):
         school_name: str,
         ele_type: Union[EleType, int] = EleType.LIGHT,
         keyword: str = "",
-    ) -> List[NamedItem]:
+    ) -> list[NamedItem]:
         payload = await self._get_payload(
             "/weixinEle/school_louDongList",
             self._p_get_buildings(school_id, school_name, ele_type, keyword),
@@ -789,18 +803,18 @@ class AsyncHnuUtilityClient(_EndpointMixin, BaseClient):
         school_id: Union[str, int],
         school_name: str,
         keyword: str = "",
-    ) -> List[NamedItem]:
+    ) -> list[NamedItem]:
         payload = await self._get_payload(
             "/weixinEle/waterSchool_louDongList",
             self._p_get_water_buildings(school_id, school_name, keyword),
         )
         return self._list(NamedItem, payload)
 
-    async def get_rooms(self, lou_dong_id: Union[str, int], keyword: str = "") -> List[NamedItem]:
+    async def get_rooms(self, lou_dong_id: Union[str, int], keyword: str = "") -> list[NamedItem]:
         payload = await self._get_payload("/weixinEle/louDong_roomList", self._p_get_rooms(lou_dong_id, keyword))
         return self._list(NamedItem, payload)
 
-    async def get_water_rooms(self, lou_dong_id: Union[str, int], keyword: str = "") -> List[NamedItem]:
+    async def get_water_rooms(self, lou_dong_id: Union[str, int], keyword: str = "") -> list[NamedItem]:
         payload = await self._get_payload(
             "/weixinEle/waterLouDong_roomList",
             self._p_get_rooms(lou_dong_id, keyword),

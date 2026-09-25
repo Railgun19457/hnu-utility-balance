@@ -30,11 +30,7 @@ def build_parser(description: str) -> argparse.ArgumentParser:
 
 def resolve_open_id(parser: argparse.ArgumentParser, args: argparse.Namespace) -> str:
     """从解析结果取 openId，缺省时读配置文件；取不到则报错退出。"""
-    open_id = (
-        args.open_id
-        or load_open_id("hnu_config.json")
-        or load_open_id(_REPO_ROOT / "hnu_config.json")
-    )
+    open_id = args.open_id or load_open_id("hnu_config.json") or load_open_id(_REPO_ROOT / "hnu_config.json")
     if not open_id:
         parser.error("未提供 openId：请先运行 extract_openid.py，或以参数传入")
     return str(open_id)

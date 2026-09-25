@@ -4,7 +4,8 @@ from __future__ import annotations
 
 import asyncio
 import hashlib
-from typing import Any, Callable, Dict, List
+import inspect
+from typing import Any
 
 import httpx
 import pytest
@@ -15,17 +16,18 @@ from hnu_utility import (
     AsyncHnuUtilityClient,
     ConsumeType,
     HnuApiError,
+    HnuNetworkError,
     HnuResponseError,
     HnuUtilityClient,
     RoomType,
 )
 
 
-def ok(result: Any = None, message: Any = None) -> Dict[str, Any]:
+def ok(result: Any = None, message: Any = None) -> dict[str, Any]:
     return {"statusCode": "200", "message": message, "resultObject": result}
 
 
-def fail(code: Any, message: Any = None) -> Dict[str, Any]:
+def fail(code: Any, message: Any = None) -> dict[str, Any]:
     return {"statusCode": str(code), "message": message, "resultObject": None}
 
 
@@ -33,7 +35,7 @@ class Handler:
     """记录所有请求，并按给定数据返回响应。"""
 
     def __init__(self, payload: Any) -> None:
-        self.requests: List[httpx.Request] = []
+        self.requests: list[httpx.Request] = []
         self._payload = payload
 
     def __call__(self, request: httpx.Request) -> httpx.Response:
@@ -42,7 +44,7 @@ class Handler:
         return httpx.Response(200, json=data)
 
     @property
-    def last_query(self) -> Dict[str, str]:
+    def last_query(self) -> dict[str, str]:
         return dict(httpx.QueryParams(self.requests[-1].url.query))
 
     @property
@@ -75,9 +77,7 @@ def test_signed_request_contains_sign_fields() -> None:
     query = handler.last_query
     assert query["openId"] == "ofTEST_openid"
     assert query["appid"] == APP_ID
-    assert query["sign"] == hashlib.md5(
-        f"{APP_ID}{query['timestamp']}{APP_SECRET}".encode()
-    ).hexdigest()
+    assert query["sign"] == hashlib.md5(f"{APP_ID}{query['timestamp']}{APP_SECRET}".encode()).hexdigest()
     assert handler.last_path == "/scanQRWaterCtrl_redis_hndx1/service/applet/getWxUser"
 
 
@@ -157,6 +157,17 @@ def test_http_error_raises_response_error() -> None:
     with pytest.raises(HnuResponseError) as excinfo:
         client.get_schools()
     assert excinfo.value.status_code == 502
+
+
+def test_network_error_maps_to_hnu_network_error() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        raise httpx.ConnectError("connection refused", request=request)
+
+    client = HnuUtilityClient("ofTEST_openid", transport=httpx.MockTransport(handler))
+    with pytest.raises(HnuNetworkError) as excinfo:
+        client.get_wx_user()
+    assert excinfo.value.url is not None
+    assert "connection refused" in str(excinfo.value)
 
 
 # ── 记录 ────────────────────────────────────────────────────────────
@@ -314,6 +325,21 @@ def test_missing_open_id_raises_value_error() -> None:
         client.get_wx_user()
 
 
+def test_raw_request_without_open_id() -> None:
+    handler = Handler(ok("pong"))
+    client = HnuUtilityClient(transport=httpx.MockTransport(handler))
+    assert client.raw_request("/some/unknown/api", {"foo": "bar"}, with_open_id=False) == "pong"
+    assert handler.last_query == {"foo": "bar"}
+
+
+def test_external_client_is_not_closed() -> None:
+    external = httpx.Client(transport=httpx.MockTransport(Handler(ok())))
+    client = HnuUtilityClient("ofTEST_openid", client=external)
+    client.close()
+    assert not external.is_closed
+    external.close()
+
+
 # ── 异步客户端 ──────────────────────────────────────────────────────
 
 
@@ -329,9 +355,7 @@ def test_async_client_end_to_end() -> None:
                 },
             }
         )
-        async with AsyncHnuUtilityClient(
-            "ofTEST_openid", transport=httpx.MockTransport(handler)
-        ) as client:
+        async with AsyncHnuUtilityClient("ofTEST_openid", transport=httpx.MockTransport(handler)) as client:
             wx_user = await client.get_wx_user()
             schools = await client.get_schools()
         assert handler is not None
@@ -345,10 +369,109 @@ def test_async_client_end_to_end() -> None:
 def test_async_api_error() -> None:
     async def run() -> None:
         handler = Handler(fail(500, None))
-        async with AsyncHnuUtilityClient(
-            "ofTEST_openid", transport=httpx.MockTransport(handler)
-        ) as client:
+        async with AsyncHnuUtilityClient("ofTEST_openid", transport=httpx.MockTransport(handler)) as client:
             with pytest.raises(HnuApiError):
                 await client.get_wx_user()
 
     asyncio.run(run())
+
+
+# ── 空 resultObject / 其他接口 ──────────────────────────────────────
+
+
+def test_null_result_object_returns_empty_model() -> None:
+    handler = Handler(ok(None))
+    with make_client(handler) as client:
+        wx_user = client.get_wx_user()
+        info = client.get_ele_info()
+        used = client.get_ele_used_info()
+    assert wx_user.user.real_name == ""
+    assert wx_user.user.amount is None
+    assert wx_user.hot_water_price is None
+    assert info.left_ele is None
+    assert used.records == []
+
+
+def test_get_user_parses_fields() -> None:
+    handler = Handler(ok({"id": 1, "realName": "王五", "studentNum": "20240001", "amount": "8.5", "freeMoney": "1.5"}))
+    with make_client(handler) as client:
+        user = client.get_user()
+    assert user.id == 1
+    assert user.real_name == "王五"
+    assert user.total_money == pytest.approx(10.0)
+    assert handler.last_path.endswith("/applet/getUser")
+
+
+def test_get_ele_used_info_parses_records() -> None:
+    handler = Handler(
+        ok({"xiaoQu": "海甸校区", "louDong": "紫荆3公寓", "room": "660照明", "list": [{"month": "2026-09"}]})
+    )
+    with make_client(handler) as client:
+        used = client.get_ele_used_info()
+    assert used.room == "660照明"
+    assert used.records == [{"month": "2026-09"}]
+    assert handler.last_path.endswith("/weixinEle/getEleUsedInfo")
+
+
+def test_get_info_url_needs_no_open_id() -> None:
+    handler = Handler(ok("https://example.com/help"))
+    client = HnuUtilityClient(transport=httpx.MockTransport(handler))
+    assert client.get_info_url("海南大学") == "https://example.com/help"
+    assert handler.last_query == {"schoolName": "海南大学", "type": "weixin"}
+
+
+def test_exchange_code() -> None:
+    handler = Handler(ok("ofNEW_openid"))
+    client = HnuUtilityClient(transport=httpx.MockTransport(handler))
+    assert client.exchange_code("wx-code") == "ofNEW_openid"
+    assert handler.last_query == {"code": "wx-code"}
+
+
+def test_water_catalog_endpoints() -> None:
+    handler = Handler(ok([{"id": 1, "text": "海甸校区"}]))
+    client = HnuUtilityClient(transport=httpx.MockTransport(handler))
+    assert client.get_water_schools()[0].text == "海甸校区"
+    assert handler.last_path.endswith("/weixinEle/waterSchoolList")
+
+    client.get_water_buildings(1, "海甸校区", keyword="紫荆")
+    assert handler.last_path.endswith("/weixinEle/waterSchool_louDongList")
+    assert handler.last_query["type"] == "1"
+    assert handler.last_query["loudongInfo"] == "紫荆"
+
+    client.get_water_rooms(2)
+    assert handler.last_path.endswith("/weixinEle/waterLouDong_roomList")
+    assert handler.last_query["louDongId"] == "2"
+
+
+def test_get_consume_records() -> None:
+    handler = Handler(ok([{"id": 1, "consPrice": "0.35", "consQuantity": "12.5", "deviceName": "A栋101"}]))
+    with make_client(handler) as client:
+        records = client.get_consume_records("海南大学")
+    assert handler.last_query["schoolName"] == "海南大学"
+    assert records[0].cons_price == 0.35
+    assert records[0].device_name == "A栋101"
+
+
+def test_async_null_result_object() -> None:
+    async def run() -> None:
+        handler = Handler(ok(None))
+        async with AsyncHnuUtilityClient("ofTEST_openid", transport=httpx.MockTransport(handler)) as client:
+            wx_user = await client.get_wx_user()
+        assert wx_user.user.real_name == ""
+
+    asyncio.run(run())
+
+
+# ── 同步 / 异步 API 一致性 ──────────────────────────────────────────
+
+
+def test_sync_async_api_parity() -> None:
+    sync_public = {name for name in dir(HnuUtilityClient) if not name.startswith("_")}
+    async_public = {name for name in dir(AsyncHnuUtilityClient) if not name.startswith("_")}
+    assert sync_public - async_public == {"close"}
+    assert async_public - sync_public == {"aclose"}
+    for name in sorted(sync_public & async_public):
+        sync_attr = getattr(HnuUtilityClient, name)
+        async_attr = getattr(AsyncHnuUtilityClient, name)
+        if callable(sync_attr) and callable(async_attr):
+            assert inspect.signature(sync_attr) == inspect.signature(async_attr), name

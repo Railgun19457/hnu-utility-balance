@@ -13,7 +13,10 @@ requires-python = ">=3.9"
 dependencies = ["httpx>=0.27,<1"]
 
 [project.optional-dependencies]
-dev = ["pytest>=8"]
+dev = ["pytest>=8", "ruff>=0.8", "mypy>=1.10,<2"]
+
+[project.urls]
+Repository = "https://github.com/Railgun19457/hnu-utility-balance"
 
 [tool.setuptools.dynamic]
 version = {attr = "hnu_utility.const.__version__"}
@@ -26,3 +29,16 @@ hnu_utility = ["py.typed"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+
+[tool.ruff]
+line-length = 120
+target-version = "py39"
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "B", "UP"]
+ignore = ["UP007", "UP045"]
+
+[tool.mypy]
+python_version = "3.10"
+files = ["hnu_utility"]
+strict = true

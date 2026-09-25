@@ -1,14 +1,29 @@
 """数据模型：接口返回结果的强类型封装。
 
 每个模型都保留了原始字典（``raw`` 字段），方便访问未建模的字段。
+所有 ``from_dict`` 都容忍 ``None`` / 非映射输入（当作空字典处理）。
 """
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import dataclass, field
-from typing import Any, Dict, List, Mapping, Optional, Type, TypeVar
+from typing import Any, Optional, Protocol, TypeVar
 
 _T = TypeVar("_T")
+_T_co = TypeVar("_T_co", covariant=True)
+
+
+class _FromDict(Protocol[_T_co]):
+    """带 ``from_dict`` 构造器的模型协议。"""
+
+    @classmethod
+    def from_dict(cls, data: Any) -> _T_co: ...
+
+
+def _mapping(value: Any) -> Mapping[str, Any]:
+    """把非映射输入（例如 ``None``）当作空字典处理。"""
+    return value if isinstance(value, Mapping) else {}
 
 
 def _num(value: Any) -> Optional[float]:
@@ -22,12 +37,18 @@ def _num(value: Any) -> Optional[float]:
 
 
 def _int(value: Any) -> Optional[int]:
+    """把接口返回的整数（可能是字符串或 ``"12.0"`` 这类数值串）转成 int。"""
     if value is None or value == "":
         return None
     try:
         return int(value)
     except (TypeError, ValueError):
+        pass
+    try:
+        number = float(value)
+    except (TypeError, ValueError):
         return None
+    return int(number) if number.is_integer() else None
 
 
 def _str(value: Any) -> str:
@@ -38,7 +59,7 @@ def _opt_str(value: Any) -> Optional[str]:
     return None if value is None else str(value)
 
 
-def parse_list(model: Type[_T], data: Any) -> List[_T]:
+def parse_list(model: type[_FromDict[_T]], data: Any) -> list[_T]:
     """把接口返回的对象列表解析成模型列表，容忍 None 和非列表输入。"""
     if not isinstance(data, list):
         return []
@@ -51,10 +72,11 @@ class NamedItem:
 
     id: str
     text: str
-    raw: Dict[str, Any] = field(default_factory=dict, repr=False, compare=False)
+    raw: dict[str, Any] = field(default_factory=dict, repr=False, compare=False)
 
     @classmethod
-    def from_dict(cls, data: Mapping[str, Any]) -> "NamedItem":
+    def from_dict(cls, data: Any) -> NamedItem:
+        data = _mapping(data)
         return cls(id=_str(data.get("id")), text=_str(data.get("text")), raw=dict(data))
 
 
@@ -92,7 +114,7 @@ class User:
     amount: Optional[float] = None
     free_money: Optional[float] = None
 
-    raw: Dict[str, Any] = field(default_factory=dict, repr=False, compare=False)
+    raw: dict[str, Any] = field(default_factory=dict, repr=False, compare=False)
 
     @property
     def total_money(self) -> float:
@@ -100,7 +122,8 @@ class User:
         return (self.amount or 0.0) + (self.free_money or 0.0)
 
     @classmethod
-    def from_dict(cls, data: Mapping[str, Any]) -> "User":
+    def from_dict(cls, data: Any) -> User:
+        data = _mapping(data)
         return cls(
             id=_int(data.get("id")),
             open_id=_str(data.get("openId")),
@@ -139,13 +162,13 @@ class WxUser:
     hot_water_price: Optional[float] = None
     param_set_switch: str = ""
     register_switch: str = ""
-    raw: Dict[str, Any] = field(default_factory=dict, repr=False, compare=False)
+    raw: dict[str, Any] = field(default_factory=dict, repr=False, compare=False)
 
     @classmethod
-    def from_dict(cls, data: Mapping[str, Any]) -> "WxUser":
-        raw_user = data.get("user")
+    def from_dict(cls, data: Any) -> WxUser:
+        data = _mapping(data)
         return cls(
-            user=User.from_dict(raw_user if isinstance(raw_user, Mapping) else {}),
+            user=User.from_dict(data.get("user")),
             hot_water_price=_num(data.get("hotWaterPrice")),
             param_set_switch=_str(data.get("paramSetSwitch")),
             register_switch=_str(data.get("registerSwitch")),
@@ -162,10 +185,11 @@ class EleInfo:
     mon_time: str = ""
     lou_dong: str = ""
     room: str = ""
-    raw: Dict[str, Any] = field(default_factory=dict, repr=False, compare=False)
+    raw: dict[str, Any] = field(default_factory=dict, repr=False, compare=False)
 
     @classmethod
-    def from_dict(cls, data: Mapping[str, Any]) -> "EleInfo":
+    def from_dict(cls, data: Any) -> EleInfo:
+        data = _mapping(data)
         return cls(
             left_ele=_num(data.get("leftEle")),
             left_money=_num(data.get("leftMoney")),
@@ -185,10 +209,11 @@ class WaterInfo:
     mon_time: str = ""
     lou_dong: str = ""
     room: str = ""
-    raw: Dict[str, Any] = field(default_factory=dict, repr=False, compare=False)
+    raw: dict[str, Any] = field(default_factory=dict, repr=False, compare=False)
 
     @classmethod
-    def from_dict(cls, data: Mapping[str, Any]) -> "WaterInfo":
+    def from_dict(cls, data: Any) -> WaterInfo:
+        data = _mapping(data)
         return cls(
             left_water=_num(data.get("leftWater")),
             left_money=_num(data.get("leftMoney")),
@@ -206,10 +231,11 @@ class BuyRecord:
     create_time: str = ""
     room_name: str = ""
     pay_money: Optional[float] = None
-    raw: Dict[str, Any] = field(default_factory=dict, repr=False, compare=False)
+    raw: dict[str, Any] = field(default_factory=dict, repr=False, compare=False)
 
     @classmethod
-    def from_dict(cls, data: Mapping[str, Any]) -> "BuyRecord":
+    def from_dict(cls, data: Any) -> BuyRecord:
+        data = _mapping(data)
         return cls(
             create_time=_str(data.get("createTime")),
             room_name=_str(data.get("roomName")),
@@ -224,11 +250,12 @@ class PersonalBuyInfo:
 
     name: str = ""
     stu_num: str = ""
-    records: List[BuyRecord] = field(default_factory=list)
-    raw: Dict[str, Any] = field(default_factory=dict, repr=False, compare=False)
+    records: list[BuyRecord] = field(default_factory=list)
+    raw: dict[str, Any] = field(default_factory=dict, repr=False, compare=False)
 
     @classmethod
-    def from_dict(cls, data: Mapping[str, Any]) -> "PersonalBuyInfo":
+    def from_dict(cls, data: Any) -> PersonalBuyInfo:
+        data = _mapping(data)
         return cls(
             name=_str(data.get("name")),
             stu_num=_str(data.get("stuNum")),
@@ -244,10 +271,11 @@ class RoomBuyRecord:
     real_name: str = ""
     create_time: str = ""
     pay_money: Optional[float] = None
-    raw: Dict[str, Any] = field(default_factory=dict, repr=False, compare=False)
+    raw: dict[str, Any] = field(default_factory=dict, repr=False, compare=False)
 
     @classmethod
-    def from_dict(cls, data: Mapping[str, Any]) -> "RoomBuyRecord":
+    def from_dict(cls, data: Any) -> RoomBuyRecord:
+        data = _mapping(data)
         return cls(
             real_name=_str(data.get("realName")),
             create_time=_str(data.get("createTime")),
@@ -263,11 +291,12 @@ class RoomBuyInfo:
     xiao_qu: str = ""
     lou_dong: str = ""
     room: Optional[str] = None
-    records: List[RoomBuyRecord] = field(default_factory=list)
-    raw: Dict[str, Any] = field(default_factory=dict, repr=False, compare=False)
+    records: list[RoomBuyRecord] = field(default_factory=list)
+    raw: dict[str, Any] = field(default_factory=dict, repr=False, compare=False)
 
     @classmethod
-    def from_dict(cls, data: Mapping[str, Any]) -> "RoomBuyInfo":
+    def from_dict(cls, data: Any) -> RoomBuyInfo:
+        data = _mapping(data)
         return cls(
             xiao_qu=_str(data.get("xiaoQu")),
             lou_dong=_str(data.get("louDong")),
@@ -296,10 +325,11 @@ class BuyOrder:
     down_time: str = ""
     is_send: Optional[int] = None
     pay_state: Optional[int] = None
-    raw: Dict[str, Any] = field(default_factory=dict, repr=False, compare=False)
+    raw: dict[str, Any] = field(default_factory=dict, repr=False, compare=False)
 
     @classmethod
-    def from_dict(cls, data: Mapping[str, Any]) -> "BuyOrder":
+    def from_dict(cls, data: Any) -> BuyOrder:
+        data = _mapping(data)
         return cls(
             id=_int(data.get("id")),
             open_id=_str(data.get("openId")),
@@ -341,10 +371,11 @@ class ConsumeRecord:
     student_num: str = ""
     is_sync: Optional[int] = None
     alarm_data_id: Optional[int] = None
-    raw: Dict[str, Any] = field(default_factory=dict, repr=False, compare=False)
+    raw: dict[str, Any] = field(default_factory=dict, repr=False, compare=False)
 
     @classmethod
-    def from_dict(cls, data: Mapping[str, Any]) -> "ConsumeRecord":
+    def from_dict(cls, data: Any) -> ConsumeRecord:
+        data = _mapping(data)
         return cls(
             id=_int(data.get("id")),
             open_id=_str(data.get("openId")),
@@ -378,11 +409,12 @@ class UsedEleInfo:
     xiao_qu: str = ""
     lou_dong: str = ""
     room: str = ""
-    records: List[Dict[str, Any]] = field(default_factory=list)
-    raw: Dict[str, Any] = field(default_factory=dict, repr=False, compare=False)
+    records: list[dict[str, Any]] = field(default_factory=list)
+    raw: dict[str, Any] = field(default_factory=dict, repr=False, compare=False)
 
     @classmethod
-    def from_dict(cls, data: Mapping[str, Any]) -> "UsedEleInfo":
+    def from_dict(cls, data: Any) -> UsedEleInfo:
+        data = _mapping(data)
         records = data.get("list")
         return cls(
             xiao_qu=_str(data.get("xiaoQu")),
