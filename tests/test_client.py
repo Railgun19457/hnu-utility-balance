@@ -58,10 +58,6 @@ def make_client(handler: Handler, **kwargs: Any) -> HnuUtilityClient:
     )
 
 
-def query_to_params(query: str) -> Dict[str, str]:
-    return dict(httpx.QueryParams(query))
-
-
 # ── 签名 ────────────────────────────────────────────────────────────
 
 
@@ -156,10 +152,6 @@ def test_no_data_code_201() -> None:
 
 
 def test_http_error_raises_response_error() -> None:
-    def payload(request: httpx.Request) -> Dict[str, Any]:
-        return {}
-
-    handler = Handler(payload)
     transport = httpx.MockTransport(lambda request: httpx.Response(502, text="bad gateway"))
     client = HnuUtilityClient("ofTEST_openid", transport=transport)
     with pytest.raises(HnuResponseError) as excinfo:

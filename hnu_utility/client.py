@@ -209,7 +209,7 @@ class _EndpointMixin:
     def _p_get_left_money(self) -> Mapping[str, Any]:
         return self._signed_params()  # type: ignore[attr-defined]
 
-    def _p_get_ele_info(self, ele_type: Union[EleType, int]) -> Mapping[str, Any]:
+    def _p_get_ele_info(self, ele_type: Union[EleType, int, str]) -> Mapping[str, Any]:
         return {**self._open_id_params(), "type": int(ele_type)}  # type: ignore[attr-defined]
 
     def _p_get_water_info(self) -> Mapping[str, Any]:
@@ -341,7 +341,8 @@ class HnuUtilityClient(_EndpointMixin, BaseClient):
     transport:
         自定义 ``httpx.BaseTransport``（测试时可传 ``httpx.MockTransport``）。
     client:
-        复用外部 ``httpx.Client``，此时 :meth:`close` 不会关闭它。
+        复用外部 ``httpx.Client``；此时 ``timeout`` / ``retries`` / ``verify`` /
+        ``headers`` 以该对象为准，:meth:`close` 也不会关闭它。
 
     其余参数（``base_url`` / ``timeout`` / ``retries`` / ``verify`` 等）见
     :class:`BaseClient`。
@@ -438,7 +439,7 @@ class HnuUtilityClient(_EndpointMixin, BaseClient):
         """获取热水账户（``/applet/getLeftMoney``，需签名，返回结构与 ``getWxUser().user`` 相同）。"""
         return User.from_dict(self._get("/applet/getLeftMoney", self._p_get_left_money()))
 
-    def get_ele_info(self, ele_type: Union[EleType, int] = EleType.LIGHT) -> EleInfo:
+    def get_ele_info(self, ele_type: Union[EleType, int, str] = EleType.LIGHT) -> EleInfo:
         """获取照明（``EleType.LIGHT``）或空调（``EleType.AIR``）余额。"""
         return EleInfo.from_dict(self._get("/weixinEle/getEleInfo", self._p_get_ele_info(ele_type)))
 
@@ -633,7 +634,7 @@ class HnuUtilityClient(_EndpointMixin, BaseClient):
 
 
 class AsyncHnuUtilityClient(_EndpointMixin, BaseClient):
-    """异步客户端（基于 ``httpx.AsyncClient``），接口与同步版完全一致。"""
+    """异步客户端（基于 ``httpx.AsyncClient``），接口与构造参数同同步版。"""
 
     def __init__(
         self,
@@ -716,7 +717,7 @@ class AsyncHnuUtilityClient(_EndpointMixin, BaseClient):
     async def get_left_money(self) -> User:
         return User.from_dict(await self._get("/applet/getLeftMoney", self._p_get_left_money()))
 
-    async def get_ele_info(self, ele_type: Union[EleType, int] = EleType.LIGHT) -> EleInfo:
+    async def get_ele_info(self, ele_type: Union[EleType, int, str] = EleType.LIGHT) -> EleInfo:
         return EleInfo.from_dict(await self._get("/weixinEle/getEleInfo", self._p_get_ele_info(ele_type)))
 
     async def get_water_info(self) -> WaterInfo:

@@ -28,6 +28,7 @@ from .const import (
     RoomType,
     __version__,
 )
+from .discovery import default_search_paths, scan_open_ids
 from .exceptions import HnuApiError, HnuError, HnuNetworkError, HnuResponseError
 from .models import (
     BuyOrder,
@@ -59,6 +60,8 @@ __all__ = [
     "BaseClient",
     "HnuUtilityClient",
     "AsyncHnuUtilityClient",
+    "default_search_paths",
+    "scan_open_ids",
     "HnuError",
     "HnuApiError",
     "HnuNetworkError",

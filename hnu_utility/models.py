@@ -34,6 +34,10 @@ def _str(value: Any) -> str:
     return "" if value is None else str(value)
 
 
+def _opt_str(value: Any) -> Optional[str]:
+    return None if value is None else str(value)
+
+
 def parse_list(model: Type[_T], data: Any) -> List[_T]:
     """把接口返回的对象列表解析成模型列表，容忍 None 和非列表输入。"""
     if not isinstance(data, list):
@@ -267,7 +271,7 @@ class RoomBuyInfo:
         return cls(
             xiao_qu=_str(data.get("xiaoQu")),
             lou_dong=_str(data.get("louDong")),
-            room=data.get("room") if data.get("room") is None else _str(data.get("room")),
+            room=_opt_str(data.get("room")),
             records=parse_list(RoomBuyRecord, data.get("list")),
             raw=dict(data),
         )
