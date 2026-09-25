@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 
 import extract_openid
-from extract_openid import parse_capture_line, save_config
+from extract_openid import choose_mode, parse_capture_line, save_config
 
 OID = "otest00000000000000000000000"  # 合成值，非真实 openId
 
@@ -37,3 +37,27 @@ def test_save_config_writes_when_missing(tmp_path, monkeypatch):
     save_config(OID)
 
     assert json.loads(config.read_text(encoding="utf-8")) == {"openId": OID}
+
+
+def test_choose_mode_defaults_to_scan(monkeypatch):
+    monkeypatch.setattr("builtins.input", lambda _prompt: "")
+    assert choose_mode() == "scan"
+
+
+def test_choose_mode_accepts_proxy(monkeypatch):
+    monkeypatch.setattr("builtins.input", lambda _prompt: "2")
+    assert choose_mode() == "proxy"
+
+
+def test_choose_mode_retries_invalid_input(monkeypatch):
+    answers = iter(["x", "2"])
+    monkeypatch.setattr("builtins.input", lambda _prompt: next(answers))
+    assert choose_mode() == "proxy"
+
+
+def test_choose_mode_falls_back_to_scan_on_eof(monkeypatch):
+    def raise_eof(_prompt):
+        raise EOFError
+
+    monkeypatch.setattr("builtins.input", raise_eof)
+    assert choose_mode() == "scan"

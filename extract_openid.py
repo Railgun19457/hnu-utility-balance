@@ -1,13 +1,13 @@
 #!/usr/bin/env python3
 r"""
-海南大学水电费 - 提取 openId 工具
+海大售电 - openId 提取工具
 
-优先从本机微信缓存中直接扫描 openId（无需抓包）；
-找不到时进入监听模式，打开小程序即可自动捕获；
-仍失败可回退到 mitmproxy 抓包流程（--proxy 可直接进入）。
+先在 PC 微信中打开一次「海大售电」小程序，再从本机微信缓存中直接扫描 openId（无需抓包）；
+扫描失败可回退到 mitmproxy 抓包流程。
 
 用法:
-    python extract_openid.py            # 扫描 -> 监听 -> (可选)抓包
+    python extract_openid.py            # 交互式选择模式
+    python extract_openid.py --scan     # 直接扫描本机微信缓存
     python extract_openid.py --proxy    # 直接走 mitmproxy 抓包
 """
 
@@ -25,8 +25,6 @@ ADDON_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "_capture_
 OUTPUT_FILE = os.path.join(tempfile.gettempdir(), "hnu_openid.txt")
 PROXY_PORT = 18889
 PROXY_TIMEOUT_SECONDS = 120
-WATCH_SECONDS = 180
-POLL_INTERVAL = 2
 
 ADDON_CODE_TEMPLATE = r"""
 import json
@@ -138,22 +136,10 @@ def confirm_and_save(valid):
     return True
 
 
-def scan_flow(watch):
-    """本地扫描流程。watch=True 时轮询等待用户打开小程序。返回是否成功。"""
-    if watch:
-        print(f"  请在 PC 微信中打开「海大售电」小程序（任意页面即可），最长等待 {WATCH_SECONDS}s")
-        deadline = time.time() + WATCH_SECONDS
-        candidates = []
-        while time.time() < deadline:
-            candidates = scan_once()
-            if candidates:
-                break
-            print(f"\r  监听中... 剩余 {int(deadline - time.time())}s ", end="", flush=True)
-            time.sleep(POLL_INTERVAL)
-        print()
-    else:
-        print("  [1/2] 扫描本机微信缓存...")
-        candidates = scan_once()
+def scan_flow():
+    """本地扫描流程。返回是否成功。"""
+    print("  [1/2] 扫描本机微信缓存（前提：已在 PC 微信打开过一次「海大售电」小程序）...")
+    candidates = scan_once()
 
     if not candidates:
         return False
@@ -257,12 +243,7 @@ def proxy_flow():
         print("\n  [错误] 抓包模式依赖 Windows 系统代理与 PC 微信，当前平台不支持")
         return
 
-    print(
-        "\n"
-        "  +--------------------------------+\n"
-        "  |  海南大学水电费 - 抓包模式     |\n"
-        "  +--------------------------------+\n"
-    )
+    print("\n  +-----------------------+\n  |  海大售电 - 抓包模式  |\n  +-----------------------+\n")
 
     try:
         check = subprocess.run(["mitmdump", "--version"], capture_output=True, text=True, timeout=10)
@@ -420,34 +401,56 @@ def proxy_flow():
 # ─────────────────────────── 入口 ───────────────────────────
 
 
+def choose_mode():
+    """交互式选择运行模式，返回 ``"scan"`` 或 ``"proxy"``；无法输入时默认扫描。"""
+    print("  请选择运行模式：")
+    print("    1. 扫描本机微信缓存（推荐，前提：已在 PC 微信打开过一次小程序）")
+    print("    2. mitmproxy 抓包（需要安装 mitmproxy）")
+
+    while True:
+        try:
+            answer = input("\n  输入序号 [1]: ").strip() or "1"
+        except (EOFError, KeyboardInterrupt):
+            print()
+            return "scan"
+        if answer in ("1", "2"):
+            return "scan" if answer == "1" else "proxy"
+        print("  请输入 1 或 2")
+
+
 def main():
     print(
-        "\n"
-        "  +--------------------------------+\n"
-        "  |  海南大学水电费 - 提取 openId  |\n"
-        "  +--------------------------------+\n"
+        "\n  +------------------------------+\n  |  海大售电 - openId 提取工具  |\n  +------------------------------+\n"
     )
 
-    if "--proxy" in sys.argv[1:]:
+    args = sys.argv[1:]
+    if "-h" in args or "--help" in args:
+        print("  用法: python extract_openid.py [--scan | --proxy]\n")
+        return
+
+    if "--proxy" in args:
+        proxy_flow()
+        return
+
+    mode = "scan" if "--scan" in args else choose_mode()
+    if mode == "proxy":
         proxy_flow()
         return
 
     try:
         import hnu_utility  # noqa: F401
     except ImportError:
-        print("  [提示] 未安装本库依赖，跳过本地扫描（pip install -e .）\n")
+        print("  [提示] 未安装本库依赖，无法本地扫描（pip install -e .）\n")
         proxy_flow()
         return
 
-    if scan_flow(watch=False):
+    if scan_flow():
         return
 
     if hnu_utility.default_search_paths():
-        print("\n  本地缓存中没有找到。请在 PC 微信中打开一次「海大售电」小程序\n")
-        if scan_flow(watch=True):
-            return
+        print("\n  本地缓存中没有找到。请先在 PC 微信中打开一次「海大售电」小程序，再重新运行本脚本\n")
     else:
-        print("\n  本机没有微信数据目录（可能未运行过 PC 微信），跳过监听模式\n")
+        print("\n  本机没有微信数据目录（可能未运行过 PC 微信），无法本地扫描\n")
 
     try:
         answer = input("\n  是否回退到 mitmproxy 抓包流程？[y/N]: ").strip().lower()

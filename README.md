@@ -83,17 +83,20 @@ with HnuUtilityClient(load_open_id("hnu_config.json")) as client:
 
 ## openId 获取
 
-运行 `extract_openid.py`，它会按优先级依次尝试三种方式：
+运行 `extract_openid.py`，交互式选择运行模式（也可加参数直接进入）：
 
 ```bash
-python extract_openid.py
+python extract_openid.py            # 交互式选择
+python extract_openid.py --scan     # 直接扫描本机微信缓存
+python extract_openid.py --proxy    # 直接走 mitmproxy 抓包
 ```
 
 ### 方式一：本地扫描（推荐，无需任何交互）
 
-PC 微信运行过「海大售电」小程序后，openId 会留在微信 webview 的 HTTP 磁盘缓存里。
-脚本直接扫描本机缓存（约 2 秒），找到候选后自动调用接口验证并写入 `hnu_config.json`。
-也可以在代码里直接用：
+**先在 PC 微信里打开一次「海大售电」小程序**（任意页面即可），openId 会留在微信
+webview 的 HTTP 磁盘缓存里；然后运行脚本，它会直接扫描本机缓存（约 2 秒），
+找到候选后自动调用接口验证并写入 `hnu_config.json`。
+也可以在自己的代码里直接用：
 
 ```python
 from hnu_utility import scan_open_ids
@@ -102,14 +105,9 @@ for open_id in scan_open_ids():   # 返回候选列表，按特异性排序
     ...
 ```
 
-### 方式二：监听模式（自动进入）
+### 方式二：mitmproxy 抓包（兜底）
 
-本地缓存没有时（比如刚清缓存），脚本会进入监听模式：此时在 PC 微信里打开一次
-「海大售电」小程序（任意页面即可），脚本每 2 秒重扫一次，最长等待 180 秒。
-
-### 方式三：mitmproxy 抓包（兜底）
-
-以上都失败时（或加 `--proxy` 参数直接进入），走原来的抓包流程：
+本地扫描失败时（或加 `--proxy` 参数直接进入），走抓包流程：
 经确认后安装 mitmproxy 证书、启动本地代理并设置系统代理（结束时恢复原代理设置），
 打开小程序即可捕获；捕获到的 openId 会先验证再写入配置。
 
@@ -117,7 +115,7 @@ for open_id in scan_open_ids():   # 返回候选列表，按特异性排序
 
 ### 适用范围
 
-本地扫描和监听模式只在**运行过 PC 微信并打开过「海大售电」小程序的机器**上有效。
+本地扫描只在**运行过 PC 微信并打开过「海大售电」小程序的机器**上有效。
 服务器、VPS、Docker 等环境没有微信，`scan_open_ids()` 会返回空列表——
 这类部署请在自己的电脑上提取一次 openId，再把 openId 填进程序配置。
 
@@ -279,7 +277,7 @@ python examples/bind_room.py --confirm
 
 ## 注意事项
 
-- 本地扫描依赖微信缓存未被清理；若扫描和监听都失败，再使用 `--proxy` 抓包流程（需要 mitmproxy）。
+- 本地扫描依赖微信缓存未被清理；若扫描失败，请先在 PC 微信中打开一次小程序再重试，或使用 `--proxy` 抓包流程（需要 mitmproxy）。
 - 抓包模式仅支持 Windows（依赖系统代理与 PC 微信），其他平台请手动填写 openId。
 - `hnu_config.json` 含个人 `openId`，请勿提交到公开仓库（已在 `.gitignore` 中）。
 - 绑定 / 解绑属于写操作，会影响账号当前绑定的房间，调用前请确认参数无误。
