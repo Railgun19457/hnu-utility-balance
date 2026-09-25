@@ -7,6 +7,7 @@ hnu_config.json
 
 # Runtime generated
 _capture_addon.py
+.pytest_cache/
 
 # IDE
 .vscode/
